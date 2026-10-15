@@ -19,6 +19,17 @@ if (!process.argv.includes('--commands-only')) {
   if (upload.status !== 0) { console.error('Secret upload failed. Run wrangler secret put DISCORD_BOT_TOKEN interactively.'); process.exit(1); }
   console.log('Bot token stored as a Worker secret.');
 }
+// Enable both installation types before registering commands that support them.
+const installation = await fetch('https://discord.com/api/v10/applications/@me', {
+  method: 'PATCH',
+  headers: { Authorization: `Bot ${token}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ integration_types_config: {
+    '0': { oauth2_install_params: { scopes: ['bot', 'applications.commands'], permissions: '51200' } },
+    '1': { oauth2_install_params: { scopes: ['applications.commands'], permissions: '0' } },
+  } }),
+});
+if (!installation.ok) throw new Error(`Enabling server and account installation failed (${installation.status}).`);
+console.log('Enabled server and account installation.');
 const scopes = [`applications/${app}/commands`];
 if (guild) scopes.push(`applications/${app}/guilds/${guild}/commands`);
 for (const scope of scopes) {
@@ -31,3 +42,4 @@ for (const scope of scopes) {
   }
 }
 console.log(`Install: https://discord.com/oauth2/authorize?client_id=${app}&scope=bot%20applications.commands&permissions=51200&integration_type=0`);
+console.log(`Personal install: https://discord.com/oauth2/authorize?client_id=${app}&scope=applications.commands&integration_type=1`);

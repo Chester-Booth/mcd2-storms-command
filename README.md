@@ -4,6 +4,8 @@ A Discord bot to view Minecraft Dungeons II's [Soul Storms](https://minecraft.wi
 
 [Add to your Discord server](https://discord.com/oauth2/authorize?client_id=1560208963138748466&scope=bot%20applications.commands&permissions=51200&integration_type=0)
 
+[Add to your account](https://discord.com/oauth2/authorize?client_id=1560208963138748466&scope=applications.commands&integration_type=1) to use commands in DMs without adding the bot to a server.
+
 ## Commands
 
 ```text
