@@ -29,7 +29,8 @@ export async function stormResponse(env, interaction, zone) {
   const stored = await readSchedule(env);
   const { current, upcoming } = snapshot(stored.schedule, now);
   const emojis = await applicationEmojis(env);
-  const timing = current ? `${emojiText(emojis, current.area.id)}${current.area.name} ends ${clock(current.end)} · ${relative(current.end)}.\n` : `${emojiText(emojis)}No active storm.\n`;
+  const status = `${emojiText(emojis)}${current ? 'Storm active.' : 'No active storm.'}\n`;
+  const timing = current ? `${emojiText(emojis, current.area.id)}${current.area.name} ends ${clock(current.end)} · ${relative(current.end)}.\n` : '';
   const next = upcoming[0];
   const stale = now - stored.checked_at > 60 * 60000 ? '\nSchedule sync is delayed. Using the last known rotation.' : '';
   const image = await renderImage(stored.schedule, now, zone);
@@ -39,7 +40,7 @@ export async function stormResponse(env, interaction, zone) {
     flags: 32768,
     components: [
       { type: 12, items: [{ media: { url: 'attachment://storms.png' }, description }] },
-      { type: 10, content: `${timing}${emojiText(emojis, next.area.id)}${next.area.name} starts at ${clock(next.start)} · ${relative(next.start)}.${stale}` },
+      { type: 10, content: `${status}${timing}${emojiText(emojis, next.area.id)}${next.area.name} starts at ${clock(next.start)} · ${relative(next.start)}.${stale}` },
       { type: 1, components: [{ type: 2, style: 2, label: 'Refresh', custom_id: `refresh:${zone}` }] },
     ],
     allowed_mentions: { parse: [] },

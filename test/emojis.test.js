@@ -41,11 +41,14 @@ test('application emojis are cached and used in reminder text, menus and DMs', a
   let displayTime = now;
   t.mock.method(Date, 'now', () => displayTime);
   await stormResponse(env, { application_id: 'emoji-test', token: 'test' }, 'Europe/London');
+  assert.match(responses[0].components[1].content, /^<:soulstorm:100> Storm active\.\n/);
   assert.match(responses[0].components[1].content, /<:howling_woods:200> Howling Woods ends/);
   assert.match(responses[0].components[1].content, /<:singers_meadow:300> Singers Meadow starts at/);
   displayTime = schedule.epoch + schedule.duration;
   await stormResponse(env, { application_id: 'emoji-test', token: 'test' }, 'Europe/London');
   assert.match(responses[1].components[1].content, /^<:soulstorm:100> No active storm\./);
+  assert.equal(responses[1].components[1].content.split('\n').length, 2);
+  assert.match(responses[1].components[1].content, /<:singers_meadow:300> Singers Meadow starts at/);
   assert.equal(lookups, 1);
 });
 
