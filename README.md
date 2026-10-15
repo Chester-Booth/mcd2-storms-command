@@ -28,7 +28,7 @@ Uses Node.js 22+, Wrangler, Cloudflare and a Discord application
 3. Create the database tables using `wrangler d1 migrations apply DB --remote`
 4. `npm run deploy`
 5. `node scripts/seed-schedule.js` load the first schedule into database
-6. `npm run setup` update credentials, register commands and generate invite link
+6. `npm run setup` update credentials, upload application emojis, register commands and generate invite link
 7. set Discord application's Interaction Endpoint URL to `https://YOUR-WORKER-URL/interactions`
 
 ### Updates

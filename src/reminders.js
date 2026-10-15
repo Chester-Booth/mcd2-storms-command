@@ -1,5 +1,6 @@
 import { discord, DiscordError, relative, clock } from './discord.js';
 import { nextStorm, readSchedule, snapshot } from './schedule.js';
+import { applicationEmojis, emojiText } from './emojis.js';
 
 export async function createReminder(env, interaction, userId, location, repeating) {
   const now = Date.now();
@@ -30,13 +31,14 @@ export async function listReminders(env, userId) {
   const { results } = await env.DB.prepare("SELECT * FROM reminders WHERE user_id = ? AND status IN ('active','sending','failed') ORDER BY created_at DESC LIMIT 10").bind(userId).all();
   if (!results.length) return { content: 'You have no reminders. Use /storm remind to create one.', components: [] };
   const { schedule } = await readSchedule(env);
+  const emojis = await applicationEmojis(env);
   const lines = results.map(r => {
     const label = r.location ? schedule.areas.find(x => x.id === r.location)?.name ?? r.location : 'Any storm';
-    return `${label} · ${r.repeating ? 'Yes' : 'No'} · ${r.status === 'failed' ? `stopped: ${r.last_error}` : relative(r.next_at)}`;
+    return `${emojiText(emojis, r.location)}${label} · ${r.repeating ? 'Yes' : 'No'} · ${r.status === 'failed' ? `stopped: ${r.last_error}` : relative(r.next_at)}`;
   });
   return {
     content: '**Storm · Repeat · Next start**\n' + lines.join('\n'),
-    components: [{ type: 1, components: [{ type: 3, custom_id: 'cancel-reminder', placeholder: 'Cancel a reminder', options: results.map(r => ({ label: `Cancel ${r.location ? schedule.areas.find(x => x.id === r.location)?.name ?? r.location : 'any storm'}${r.repeating ? ' (repeating)' : ''}`.slice(0, 100), value: r.id })) }] }],
+    components: [{ type: 1, components: [{ type: 3, custom_id: 'cancel-reminder', placeholder: 'Cancel a reminder', options: results.map(r => ({ label: `Cancel ${r.location ? schedule.areas.find(x => x.id === r.location)?.name ?? r.location : 'any storm'}${r.repeating ? ' (repeating)' : ''}`.slice(0, 100), value: r.id, ...(emojis[r.location ?? 'soulstorm'] ? { emoji: emojis[r.location ?? 'soulstorm'] } : {}) })) }] }],
   };
 }
 
@@ -63,10 +65,11 @@ export async function deliverReminders(env, now = Date.now()) {
       continue;
     }
     try {
+      const emojis = await applicationEmojis(env);
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${reminder.id}:${reminder.next_at}`));
       const nonce = Array.from(new Uint8Array(digest).slice(0, 12), n => n.toString(16).padStart(2, '0')).join('');
       await discord(env, `/channels/${reminder.dm_channel}/messages`, {
-        content: `A Soul Storm has started in **${event.area.name}**.\nEnds ${clock(event.end)} · ${relative(event.end)}.`,
+        content: `${emojiText(emojis, reminder.location)}A Soul Storm has started in **${event.area.name}**.\nEnds ${clock(event.end)} · ${relative(event.end)}.`,
         allowed_mentions: { parse: [] }, nonce, enforce_nonce: true,
       });
       await advance(env, reminder, schedule, now);

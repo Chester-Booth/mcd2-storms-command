@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import { configure } from './configure.js';
 import { commands } from '../src/commands.js';
+import { setupEmojis } from './setup-emojis.js';
 
 const config = configure();
 const { DISCORD_APPLICATION_ID: app, DISCORD_PUBLIC_KEY: publicKey, DISCORD_BOT_TOKEN: token, DISCORD_GUILD_ID: guild } = config;
@@ -8,6 +9,7 @@ if (!/^\d+$/.test(app ?? '') || !/^[a-f0-9]{64}$/i.test(publicKey ?? '') || !tok
   console.error('Fill DISCORD_APPLICATION_ID, DISCORD_PUBLIC_KEY and DISCORD_BOT_TOKEN in .env. Keep that file private.'); process.exit(1);
 }
 if (guild && !/^\d+$/.test(guild)) throw new Error('DISCORD_GUILD_ID must contain the numeric server ID.');
+await setupEmojis(config);
 if (!process.argv.includes('--commands-only')) {
   const response = await fetch('https://discord.com/api/v10/oauth2/applications/@me', { headers: { Authorization: `Bot ${token}` } });
   if (!response.ok) throw new Error(`Could not identify the app owner (${response.status}).`);
