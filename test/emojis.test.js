@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applicationEmojis } from '../src/emojis.js';
-import { listReminders, deliverReminders } from '../src/reminders.js';
+import { listReminders, deliverReminders, createReminder, controlReminder } from '../src/reminders.js';
 import { validateSchedule } from '../src/schedule.js';
 import { stormResponse } from '../src/interactions.js';
 import { database, sourceSchedule, seed } from './helpers.js';
@@ -49,6 +49,10 @@ test('application emojis are cached and used in reminder text, menus and DMs', a
   assert.match(responses[1].components[1].content, /^<:soulstorm:100> No active storm/);
   assert.equal(responses[1].components[1].content.split('\n').length, 2);
   assert.match(responses[1].components[1].content, /<:singers_meadow:300> Singers Meadow starts at/);
+  const confirmation = await createReminder(env, { id: 'confirm' }, 'other', 'howling-woods', false, 5);
+  assert.match(confirmation, /in <:howling_woods:200> Howling Woods/);
+  await DB.prepare("UPDATE reminders SET status='delivered' WHERE id='confirm'").run();
+  assert.match(await controlReminder(env, 'other', 'again', 'confirm'), /in <:howling_woods:200> Howling Woods/);
   assert.equal(lookups, 1);
 });
 

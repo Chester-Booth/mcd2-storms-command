@@ -21,12 +21,13 @@ export async function createReminder(env, interaction, userId, location, repeati
   }
   await env.DB.prepare(`INSERT INTO reminders (id, user_id, dm_channel, location, repeating, next_at, status, created_at, before_minutes)
     VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`).bind(interaction.id, userId, channel.id, location, repeating ? 1 : 0, next.notifyAt, now, beforeMinutes).run();
-  return reminderConfirmation(next, location, beforeMinutes);
+  return reminderConfirmation(env, next, location, beforeMinutes);
 }
 
-function reminderConfirmation(next, location, beforeMinutes) {
+async function reminderConfirmation(env, next, location, beforeMinutes) {
+  const emojis = location ? await applicationEmojis(env) : {};
   const timing = beforeMinutes ? `${beforeMinutes} ${beforeMinutes === 1 ? 'minute' : 'minutes'} before` : 'when';
-  return `Confirmed, I'll remind you ${relative(next.notifyAt)} ${timing} the next storm starts${location ? ` in ${next.area.name}` : ''}${beforeMinutes ? `\nStarts at ${clock(next.start)}` : ''}`;
+  return `Confirmed, I'll remind you ${relative(next.notifyAt)} ${timing} the next storm starts${location ? ` in ${emojiText(emojis, location)}${next.area.name}` : ''}${beforeMinutes ? `\nStarts at ${clock(next.start)}` : ''}`;
 }
 
 async function checkReminderLimit(env, userId, location, repeating, beforeMinutes) {
@@ -53,7 +54,7 @@ export async function controlReminder(env, userId, action, id) {
   await checkReminderLimit(env, userId, reminder.location, false, reminder.before_minutes);
   const result = await env.DB.prepare("UPDATE reminders SET status='active', next_at=?, created_at=?, last_error=NULL, lease_until=0 WHERE id=? AND user_id=? AND status='delivered' RETURNING id")
     .bind(next.notifyAt, Date.now(), id, userId).first();
-  return result ? reminderConfirmation(next, reminder.location, reminder.before_minutes) : 'This reminder is already active.';
+  return result ? reminderConfirmation(env, next, reminder.location, reminder.before_minutes) : 'This reminder is already active.';
 }
 
 export async function listReminders(env, userId) {

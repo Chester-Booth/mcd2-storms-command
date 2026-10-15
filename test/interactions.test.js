@@ -105,3 +105,18 @@ test('Refresh has a shared message limit across different users', async () => {
   assert.notEqual(userKeys[0], userKeys[1]);
   assert.deepEqual(messageKeys, ['soulstorms:app:message:shared-message', 'soulstorms:app:message:shared-message']);
 });
+
+test('storm reminders defers privately and returns the reminder list and cancellation menu', async t => {
+  const DB = database();
+  await seed(DB, validateSchedule(sourceSchedule));
+  await DB.prepare("INSERT INTO reminders(id,user_id,dm_channel,location,repeating,next_at,status,created_at,before_minutes) VALUES('reminder','user','dm','honeycomb-fields',0,?,'active',0,4)").bind(Date.now() + 60000).run();
+  const { request, publicKey } = await signed({ type: 2, id: 'reminder-list', application_id: 'app', token: 'test', user: { id: 'user' }, data: { name: 'storm', options: [{ type: 1, name: 'reminders' }] } });
+  const updates = [], pending = [];
+  t.mock.method(globalThis, 'fetch', async (url, init) => { updates.push(JSON.parse(init.body)); return Response.json({ id: 'sent' }); });
+  const response = await worker.fetch(request, { DB, DISCORD_APPLICATION_ID: 'app', DISCORD_PUBLIC_KEY: publicKey }, { waitUntil: p => pending.push(p) });
+  assert.deepEqual(await response.json(), { type: 5, data: { flags: 64 } });
+  await Promise.all(pending);
+  assert.equal(updates.length, 1);
+  assert.match(updates[0].content, /Honeycomb Fields · No · <t:.*4 min before/);
+  assert.equal(updates[0].components[0].components[0].custom_id, 'cancel-reminder');
+});
