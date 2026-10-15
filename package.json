@@ -1,0 +1,18 @@
+{
+  "name": "mcd2-storms-command",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/configure.js && wrangler dev",
+    "test": "node --test test/*.test.js",
+    "check": "node --check src/index.js && node --check src/interactions.js && node --check src/reminders.js",
+    "deploy": "node scripts/configure.js && wrangler deploy",
+    "setup": "node scripts/setup-discord.js",
+    "assets": "python scripts/build-assets.py",
+    "configure": "node scripts/configure.js"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

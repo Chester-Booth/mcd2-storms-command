@@ -1,0 +1,39 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4.110.0/config-schema.json",
+  "name": "mcd2-storms-command",
+  "main": "src/index.js",
+  "account_id": "YOUR_CLOUDFLARE_ACCOUNT_ID",
+  "compatibility_date": "2026-10-15",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "YOUR_D1_DATABASE_NAME",
+      "database_id": "YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": true,
+      "head_sampling_rate": 0.01
+    }
+  },
+  "vars": {
+    "DISCORD_APPLICATION_ID": "YOUR_DISCORD_APPLICATION_ID",
+    "DISCORD_PUBLIC_KEY": "YOUR_DISCORD_PUBLIC_KEY"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}

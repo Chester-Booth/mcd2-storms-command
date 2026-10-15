@@ -1,0 +1,12 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.env.*
+!.env.example
+.discord.env
+*.log
+tmp/
+
+# Generated from .env and wrangler.example.jsonc
+wrangler.jsonc
