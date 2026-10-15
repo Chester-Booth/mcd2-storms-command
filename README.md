@@ -44,4 +44,4 @@ npm run deploy
 
 This bot is not affiliated with Mojang, Microsoft or dungeons.tools.
 
-Fonts and icons belong to Mojang
+Code is licensed under the [MIT licence](LICENSE). Fonts and icons in `assets/`, and their generated copies in `src/generated/art.json`, belong to Mojang and are excluded from that licence.
