@@ -19,7 +19,7 @@ test('public command defers promptly and posts an actual PNG above live Discord 
   const {request,publicKey}=await signed(interaction);
   const updates=[];t.mock.method(globalThis,'fetch',async(url,init)=>{updates.push(init.body);return Response.json({id:'sent'});});
   const pending=[];
-  const response=await worker.fetch(request,{DB,DISCORD_APPLICATION_ID:'app',DISCORD_PUBLIC_KEY:publicKey},{waitUntil:p=>pending.push(p)});
+  const response=await worker.fetch(request,{DB,DISCORD_APPLICATION_ID:'app',DISCORD_PUBLIC_KEY:publicKey,STORM_USER_LIMIT:{limit:async()=>({success:true})}},{waitUntil:p=>pending.push(p)});
   assert.deepEqual(await response.json(),{type:5,data:{flags:0}});
   await Promise.all(pending);
   assert.equal(updates.length,1);
@@ -62,4 +62,46 @@ test('image descriptions include active status and every upcoming storm with its
   assert.ok(description.includes('04:40 to 05:00'));
   assert.ok(description.length <= 1024);
   assert.match(imageDescription(schedule,schedule.epoch+schedule.duration,'Europe/London'),/No active storm/);
+});
+
+test('storm commands and Refresh share a user limit and reject privately before doing work', async () => {
+  const keys = [];
+  const env = {
+    DISCORD_APPLICATION_ID: 'app',
+    STORM_USER_LIMIT: { limit: async ({ key }) => { keys.push(key); return { success: false }; } },
+    STORM_REFRESH_LIMIT: { limit: () => assert.fail('User denial must skip the message counter') },
+  };
+  for (const interaction of [
+    { type: 2, user: { id: 'user' }, data: { name: 'storms' } },
+    { type: 3, member: { user: { id: 'user' } }, message: { id: 'message' }, data: { custom_id: 'refresh:Europe/London' } },
+  ]) {
+    const { request, publicKey } = await signed({ ...interaction, application_id: 'app' });
+    const response = await worker.fetch(request, { ...env, DISCORD_PUBLIC_KEY: publicKey }, {
+      waitUntil: () => assert.fail('Rejected requests must not touch the DB or render images'),
+    });
+    assert.deepEqual(await response.json(), { type: 4, data: {
+      flags: 64, content: 'Please wait a few seconds before trying again.', allowed_mentions: { parse: [] },
+    } });
+  }
+  assert.deepEqual(keys, ['soulstorms:app:user:user', 'soulstorms:app:user:user']);
+});
+
+test('Refresh has a shared message limit across different users', async () => {
+  const userKeys = [], messageKeys = [];
+  for (const id of ['alice', 'bob']) {
+    const { request, publicKey } = await signed({
+      type: 3, application_id: 'app', user: { id }, message: { id: 'shared-message' },
+      data: { custom_id: 'refresh:Europe/London' },
+    });
+    const response = await worker.fetch(request, {
+      DISCORD_APPLICATION_ID: 'app', DISCORD_PUBLIC_KEY: publicKey,
+      STORM_USER_LIMIT: { limit: async ({ key }) => { userKeys.push(key); return { success: true }; } },
+      STORM_REFRESH_LIMIT: { limit: async ({ key }) => { messageKeys.push(key); return { success: false }; } },
+    }, { waitUntil: () => assert.fail('A blocked refresh must leave the original message untouched') });
+    const body = await response.json();
+    assert.equal(body.type, 4);
+    assert.equal(body.data.flags, 64);
+  }
+  assert.notEqual(userKeys[0], userKeys[1]);
+  assert.deepEqual(messageKeys, ['soulstorms:app:message:shared-message', 'soulstorms:app:message:shared-message']);
 });

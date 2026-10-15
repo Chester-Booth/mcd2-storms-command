@@ -19,6 +19,8 @@ A Discord bot to view Minecraft Dungeons II's [Soul Storms](https://minecraft.wi
 ```
 
 Settings are per-user and reminders arrive by DM.
+
+`/storms` and Refresh share a limit of five requests per user every ten seconds. Each message can refresh once every ten seconds.
 ## Deployment
 
 Uses Node.js 22+, Wrangler, Cloudflare and a Discord application

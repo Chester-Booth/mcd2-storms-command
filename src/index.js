@@ -1,5 +1,5 @@
 import { verifyRequest } from './discord.js';
-import { autocomplete, isPublic, runInteraction } from './interactions.js';
+import { autocomplete, isPublic, runInteraction, userId } from './interactions.js';
 import { syncSchedule } from './schedule.js';
 import { deliverReminders } from './reminders.js';
 
@@ -35,6 +35,17 @@ export default {
     if (interaction.application_id !== env.DISCORD_APPLICATION_ID) return new Response('Wrong application', { status: 401 });
     if (interaction.type === 4) return Response.json({ type: 8, data: { choices: await autocomplete(env, interaction) } });
     if (![2, 3].includes(interaction.type)) return new Response('Unsupported interaction', { status: 400 });
+    // Only verified storm commands reach these counters. Reject privately before any DB or image work.
+    if (isPublic(interaction) && userId(interaction)) {
+      const prefix = `soulstorms:${env.DISCORD_APPLICATION_ID}`;
+      const user = await env.STORM_USER_LIMIT.limit({ key: `${prefix}:user:${userId(interaction)}` });
+      const refresh = user.success && interaction.type === 3
+        ? await env.STORM_REFRESH_LIMIT.limit({ key: `${prefix}:message:${interaction.message.id}` })
+        : { success: true };
+      if (!user.success || !refresh.success) return Response.json({ type: 4, data: {
+        flags: 64, content: 'Please wait a few seconds before trying again.', allowed_mentions: { parse: [] },
+      } });
+    }
     // Acknowledge within Discord's three-second deadline, then finish the response in waitUntil.
     ctx.waitUntil(runInteraction(env, interaction));
     // Type 6 updates the clicked message; type 5 creates a new response. Flag 64 makes it private.
