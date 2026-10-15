@@ -3,6 +3,7 @@ import { snapshot, readSchedule } from './schedule.js';
 import { timezone, timezoneChoices } from './timezone.js';
 import { renderImage } from './image.js';
 import { createReminder, listReminders } from './reminders.js';
+import { applicationEmojis, emojiText } from './emojis.js';
 
 // Server interactions nest the user under member; bot DMs provide user directly.
 export const userId = interaction => interaction.member?.user?.id ?? interaction.user?.id;
@@ -27,7 +28,8 @@ export async function stormResponse(env, interaction, zone) {
   const now = Date.now();
   const stored = await readSchedule(env);
   const { current, upcoming } = snapshot(stored.schedule, now);
-  const timing = current ? `${current.area.name} ends ${clock(current.end)} · ${relative(current.end)}.\n` : 'No active storm.\n';
+  const emojis = await applicationEmojis(env);
+  const timing = current ? `${emojiText(emojis, current.area.id)}${current.area.name} ends ${clock(current.end)} · ${relative(current.end)}.\n` : `${emojiText(emojis)}No active storm.\n`;
   const next = upcoming[0];
   const stale = now - stored.checked_at > 60 * 60000 ? '\nSchedule sync is delayed. Using the last known rotation.' : '';
   const image = await renderImage(stored.schedule, now, zone);
@@ -37,7 +39,7 @@ export async function stormResponse(env, interaction, zone) {
     flags: 32768,
     components: [
       { type: 12, items: [{ media: { url: 'attachment://storms.png' }, description }] },
-      { type: 10, content: `${timing}${next.area.name} starts at ${clock(next.start)} · ${relative(next.start)}.${stale}` },
+      { type: 10, content: `${timing}${emojiText(emojis, next.area.id)}${next.area.name} starts at ${clock(next.start)} · ${relative(next.start)}.${stale}` },
       { type: 1, components: [{ type: 2, style: 2, label: 'Refresh', custom_id: `refresh:${zone}` }] },
     ],
     allowed_mentions: { parse: [] },
