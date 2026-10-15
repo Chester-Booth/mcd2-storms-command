@@ -11,14 +11,18 @@ A Discord bot to view Minecraft Dungeons II's [Soul Storms](https://minecraft.wi
 ```text
 /storms
 /storms timezone:America/New_York
+/storms location:Frozen Highlands
 /storm settings timezone:Europe/London
 /storm remind
 /storm remind location:Howling Woods
 /storm remind location:Frozen Highlands repeat:true
+/storm remind location:Frozen Highlands before:5
 /storm reminders
 ```
 
 Settings are per-user and reminders arrive by DM.
+
+Filter `/storms` by location to see its next seven appearances. Refresh keeps the filter. Set `before` to 0–30 minutes for advance notice, defaulting to the start. If a storm is too close for that notice, the reminder targets the following matching start. Advance reminders replace the start-time DM and use the existing minute cron. One-off reminder DMs have a "Remind me next time" button; repeating reminders have "Stop reminders".
 
 `/storms` and Refresh share a limit of five requests per user every ten seconds. Each message can refresh once every ten seconds.
 ## Deployment

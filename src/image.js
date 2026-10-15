@@ -29,7 +29,7 @@ function chunk(type, data) {
 }
 
 // Indexed pixels and pre-rasterised fonts avoid a browser or WASM renderer on the free tier.
-export async function renderImage(schedule, now, zone) {
+export async function renderImage(schedule, now, zone, location = null) {
   const pixels = background.slice();
   function rect(x, y, w, h, colour) {
     for (let row = y; row < Math.min(y + h, art.height); row++) pixels.fill(colour, row * art.width + x, row * art.width + x + w);
@@ -57,13 +57,14 @@ export async function renderImage(schedule, now, zone) {
       blit(glyph, x, y - fonts[font].M.top, colour); x += glyph.w;
     }
   }
-  const { current, upcoming } = snapshot(schedule, now);
+  const { current, upcoming } = snapshot(schedule, now, location);
   const time = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const eventDate = location ? new Intl.DateTimeFormat('en-GB', { timeZone: zone, day: 'numeric', month: 'short' }) : null;
   const titleWidth = measure('SOUL STORMS', 'title');
   const titleHeight = fonts.title.M.bottom - fonts.title.M.top;
   text('SOUL STORMS', (art.width - titleWidth) >> 1, Math.round((14 + 54 - titleHeight) / 2), 'title');
   blit(sprites.soulstorm, 34, 96);
-  const name = current ? current.area.name.toUpperCase() : 'NO ACTIVE STORM';
+  const name = location ? upcoming[0].area.name.toUpperCase() : current ? current.area.name.toUpperCase() : 'NO ACTIVE STORM';
   const words = name.split(' ');
   const lines = [words.slice(0, -1).join(' '), words.at(-1)].filter(Boolean);
   lines.slice(0, 2).forEach((line, index) => text(line, 157, 89 + index * 36, 'hero', 8, 365));
@@ -74,12 +75,14 @@ export async function renderImage(schedule, now, zone) {
   const baseline = font => fonts[font].M.baseline - fonts[font].M.top;
   text(current ? 'remaining' : 'until next storm', 157 + measure(countdown, 'time') + 12, 174 + baseline('time') - baseline('small'), 'small', 9, 225);
   rect(157, 213, 330, 8, 13);
-  rect(159, 215, Math.max(1, Math.round(326 * Math.min(1, (until - now) / (current ? schedule.duration : schedule.cadence - schedule.duration)))), 4, 14);
+  const interval = schedule.cadence * (location ? schedule.areas.length : 1);
+  rect(159, 215, Math.max(1, Math.round(326 * Math.min(1, (until - now) / (current ? schedule.duration : interval - schedule.duration)))), 4, 14);
   upcoming.forEach((storm, i) => {
     const y = 261 + i * 63;
     blit(sprites[storm.area.id] ?? sprites.soulstorm, 30, y + 8);
     text(storm.area.name, 82, y + 9, 'body', 8, 340);
-    text(`until ${time.format(storm.end)}`, 82, y + 34, 'small', 10, 340);
+    const date = eventDate ? eventDate.format(storm.start) + ' · ' : '';
+    text(`${date}until ${time.format(storm.end)}`, 82, y + 34, 'small', 10, 340);
     text(time.format(storm.start), 449, y + 19, 'time', 8, 80);
   });
   const updated = `${new Intl.DateTimeFormat('en-GB', { timeZone: zone, day: '2-digit', month: 'short' }).format(now)} · ${time.format(now)} · ${zone}`;

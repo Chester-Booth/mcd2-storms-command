@@ -4,6 +4,7 @@ export function database() {
   const db = new DatabaseSync(':memory:');
   db.exec(readFileSync(new URL('../migrations/0001_initial.sql', import.meta.url), 'utf8'));
   db.exec(readFileSync(new URL('../migrations/0002_sync_state.sql', import.meta.url), 'utf8'));
+  db.exec(readFileSync(new URL('../migrations/0003_advance_reminders.sql', import.meta.url), 'utf8'));
   const wrap = (sql, args = []) => ({
     bind: (...params) => wrap(sql, params),
     first: async () => db.prepare(sql).get(...args) ?? null,

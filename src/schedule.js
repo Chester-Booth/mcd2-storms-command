@@ -56,7 +56,17 @@ export function stormAt(schedule, index) {
   return { area, index, start, end: start + schedule.duration };
 }
 
-export function snapshot(schedule, now) {
+// A location repeats once per full rotation, anchored to its original position.
+export function locationSchedule(schedule, location) {
+  if (!location) return schedule;
+  const index = schedule.areas.findIndex(area => area.id === location);
+  if (index < 0) throw new Error('That location is no longer in the storm rotation. Choose a current region.');
+  return { ...schedule, epoch: schedule.epoch + index * schedule.cadence,
+    cadence: schedule.cadence * schedule.areas.length, areas: [schedule.areas[index]] };
+}
+
+export function snapshot(schedule, now, location = null) {
+  schedule = locationSchedule(schedule, location);
   const index = Math.floor((now - schedule.epoch) / schedule.cadence);
   const latest = stormAt(schedule, index);
   return {
@@ -74,6 +84,12 @@ export function nextStorm(schedule, after, location = null) {
     if (!location || storm.area.id === location) return storm;
   }
   return null;
+}
+
+// Skip starts too close to give the requested notice. next_at always stores the notification time.
+export function nextReminder(schedule, after, location, beforeMinutes = 0) {
+  const event = nextStorm(schedule, after + beforeMinutes * 60000, location);
+  return event ? { ...event, notifyAt: event.start - beforeMinutes * 60000 } : null;
 }
 
 export async function readSchedule(env) {
@@ -134,11 +150,11 @@ export async function syncSchedule(env, now = Date.now(), force = false) {
     const version = Array.from(new Uint8Array(hash), x => x.toString(16).padStart(2, '0')).join('').slice(0, 16);
     const statements = [];
     if (old && old.version !== version) {
-      const { results } = await env.DB.prepare("SELECT id, location FROM reminders WHERE status IN ('active', 'sending')").all();
+      const { results } = await env.DB.prepare("SELECT id, location, before_minutes FROM reminders WHERE status IN ('active', 'sending')").all();
       for (const reminder of results) {
-        const next = nextStorm(schedule, now, reminder.location);
+        const next = nextReminder(schedule, now, reminder.location, reminder.before_minutes);
         statements.push(env.DB.prepare('UPDATE reminders SET next_at = ?, status = ?, lease_until = 0, last_error = ? WHERE id = ?')
-          .bind(next?.start ?? 0, next ? 'active' : 'failed', next ? null : 'This region is no longer in the storm rotation.', reminder.id));
+          .bind(next?.notifyAt ?? 0, next ? 'active' : 'failed', next ? null : 'This region is no longer in the storm rotation.', reminder.id));
       }
       console.log(JSON.stringify({ event: 'schedule_changed', previous: old.version, version }));
     }
@@ -168,7 +184,7 @@ async function alertScheduleOutage(env, hasCachedSchedule) {
     await discord(env, `/channels/${channel.id}/messages`, {
       content: "I couldn't read a valid Soul Storm schedule from dungeons.tools. " + (hasCachedSchedule
         ? "I'm keeping the last known rotation and will check again before the next predicted storm."
-        : "Storm tracking is unavailable. I'll check again in an hour.") + " I won't repeat this alert until a sync succeeds and another outage occurs.",
+        : "Storm tracking is unavailable. I'll check again in an hour.") + " I won't repeat this alert until a sync succeeds and another outage occurs",
       allowed_mentions: { parse: [] },
     });
   } catch (error) {

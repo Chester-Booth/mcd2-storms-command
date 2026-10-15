@@ -43,7 +43,7 @@ export default {
         ? await env.STORM_REFRESH_LIMIT.limit({ key: `${prefix}:message:${interaction.message.id}` })
         : { success: true };
       if (!user.success || !refresh.success) return Response.json({ type: 4, data: {
-        flags: 64, content: 'Please wait a few seconds before trying again.', allowed_mentions: { parse: [] },
+        flags: 64, content: 'Please wait a few seconds before trying again', allowed_mentions: { parse: [] },
       } });
     }
     // Acknowledge within Discord's three-second deadline, then finish the response in waitUntil.

@@ -51,4 +51,4 @@ export async function verifyRequest(request, body, publicKey, now = Date.now()) 
 
 export const relative = timestamp => `<t:${Math.floor(timestamp / 1000)}:R>`;
 export const clock = timestamp => `<t:${Math.floor(timestamp / 1000)}:t>`;
-export const privateMessage = content => ({ content, allowed_mentions: { parse: [] }, embeds: [], components: [] });
+export const privateMessage = content => ({ content: content.replace(/\.$/, ''), allowed_mentions: { parse: [] }, embeds: [], components: [] });

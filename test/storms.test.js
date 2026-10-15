@@ -53,8 +53,8 @@ test('only valid fresh Discord signatures pass verification', async () => {
 
 test('source changes recalculate reminders, missing regions stop, failures keep last good data', async t => {
   const DB=database(); await seed(DB,schedule,0);
-  await DB.prepare("INSERT INTO reminders VALUES('1','u','dm','howling-woods',1,1,'active',0,NULL,0)").run();
-  await DB.prepare("INSERT INTO reminders VALUES('2','u','dm','singers-meadow',1,1,'active',0,NULL,0)").run();
+  await DB.prepare("INSERT INTO reminders (id,user_id,dm_channel,location,repeating,next_at,status,lease_until,last_error,created_at) VALUES('1','u','dm','howling-woods',1,1,'active',0,NULL,0)").run();
+  await DB.prepare("INSERT INTO reminders (id,user_id,dm_channel,location,repeating,next_at,status,lease_until,last_error,created_at) VALUES('2','u','dm','singers-meadow',1,1,'active',0,NULL,0)").run();
   const changed={...sourceSchedule,cadenceSeconds:3600,areas:[sourceSchedule.areas[0]]};
   t.mock.method(globalThis,'fetch',async()=>new Response(page(changed)));
   const now=Date.now(); await syncSchedule({DB},now,true);
@@ -78,7 +78,7 @@ test('one-off reminders fire once, repeating reminders advance, expired reminder
   const DB=database();await seed(DB,schedule);
   const now=schedule.epoch+schedule.cadence*10+30000;
   for(const [id,repeat,due] of [['1',0,now-30000],['2',1,now-30000],['3',0,now-30000-schedule.cadence]]){
-    await DB.prepare('INSERT INTO reminders VALUES(?,?,?,NULL,?,?,\'active\',0,NULL,0)').bind(id,'u','dm',repeat,due).run();
+    await DB.prepare('INSERT INTO reminders (id,user_id,dm_channel,location,repeating,next_at,status,lease_until,last_error,created_at) VALUES(?,?,?,NULL,?,?,\'active\',0,NULL,0)').bind(id,'u','dm',repeat,due).run();
   }
   const messages=[];
   t.mock.method(globalThis,'fetch',async(url,init)=>{messages.push(JSON.parse(init.body));return Response.json({id:'sent'});});
@@ -93,7 +93,7 @@ test('one-off reminders fire once, repeating reminders advance, expired reminder
 
 test('cancellation is restricted to the reminder owner',async t=>{
   const DB=database();await seed(DB,schedule);
-  await DB.prepare("INSERT INTO reminders VALUES('1','owner','dm',NULL,1,1,'active',0,NULL,0)").run();
+  await DB.prepare("INSERT INTO reminders (id,user_id,dm_channel,location,repeating,next_at,status,lease_until,last_error,created_at) VALUES('1','owner','dm',NULL,1,1,'active',0,NULL,0)").run();
   t.mock.method(globalThis,'fetch',async()=>Response.json({id:'response'}));
   await processInteraction({DB},{id:'2',application_id:'app',token:'t',type:3,user:{id:'other'},data:{custom_id:'cancel-reminder',values:['1']}});
   assert.equal((await DB.prepare("SELECT status FROM reminders WHERE id='1'").first()).status,'active');
@@ -106,7 +106,7 @@ test('creating a reminder confirms privately without sending a test DM', async t
   t.mock.method(globalThis, 'fetch', async (url, init) => { requests.push(url); return Response.json({ id: 'dm' }); });
   const content = await createReminder({ DB, DISCORD_BOT_TOKEN: 'test' }, { id: 'new' }, 'u', null, true);
   assert.deepEqual(requests, ['https://discord.com/api/v10/users/@me/channels']);
-  assert.match(content, /^Confirmed, I'll remind you <t:\d+:R> when the next storm starts\.$/);
+  assert.match(content, /^Confirmed, I'll remind you <t:\d+:R> when the next storm starts$/);
   assert.equal((await DB.prepare("SELECT status FROM reminders WHERE id='new'").first()).status, 'active');
 });
 

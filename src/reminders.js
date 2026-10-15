@@ -1,17 +1,14 @@
 import { discord, DiscordError, relative, clock } from './discord.js';
-import { nextStorm, readSchedule, snapshot } from './schedule.js';
+import { nextReminder, readSchedule, snapshot } from './schedule.js';
 import { applicationEmojis, emojiText } from './emojis.js';
 
-export async function createReminder(env, interaction, userId, location, repeating) {
+export async function createReminder(env, interaction, userId, location, repeating, beforeMinutes = 0) {
+  if (!Number.isInteger(beforeMinutes) || beforeMinutes < 0 || beforeMinutes > 30) throw new Error('Choose between 0 and 30 minutes before the storm.');
   const now = Date.now();
   const { schedule } = await readSchedule(env);
-  const next = nextStorm(schedule, now, location);
+  const next = nextReminder(schedule, now, location, beforeMinutes);
   if (!next) throw new Error('That location is no longer in the storm rotation. Choose a current region.');
-  const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM reminders WHERE user_id = ? AND status IN ('active','sending')").bind(userId).first();
-  if (count.count >= 10) throw new Error('You already have 10 active reminders. Cancel one with /storm reminders first.');
-  const existing = await env.DB.prepare("SELECT id FROM reminders WHERE user_id = ? AND location IS ? AND repeating = ? AND status IN ('active','sending')")
-    .bind(userId, location, repeating ? 1 : 0).first();
-  if (existing) throw new Error('You already have this reminder. View it with /storm reminders.');
+  await checkReminderLimit(env, userId, location, repeating, beforeMinutes);
   let channel;
   try {
     // Open the DM channel without posting a test message. Delivery permissions may still fail later.
@@ -22,9 +19,41 @@ export async function createReminder(env, interaction, userId, location, repeati
     }
     throw new Error('I could not set up your DM reminder. Please try again shortly.');
   }
-  await env.DB.prepare(`INSERT INTO reminders (id, user_id, dm_channel, location, repeating, next_at, status, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`).bind(interaction.id, userId, channel.id, location, repeating ? 1 : 0, next.start, now).run();
-  return `Confirmed, I'll remind you ${relative(next.start)} when the next storm starts${location ? ` in ${next.area.name}` : ''}.`;
+  await env.DB.prepare(`INSERT INTO reminders (id, user_id, dm_channel, location, repeating, next_at, status, created_at, before_minutes)
+    VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`).bind(interaction.id, userId, channel.id, location, repeating ? 1 : 0, next.notifyAt, now, beforeMinutes).run();
+  return reminderConfirmation(next, location, beforeMinutes);
+}
+
+function reminderConfirmation(next, location, beforeMinutes) {
+  const timing = beforeMinutes ? `${beforeMinutes} ${beforeMinutes === 1 ? 'minute' : 'minutes'} before` : 'when';
+  return `Confirmed, I'll remind you ${relative(next.notifyAt)} ${timing} the next storm starts${location ? ` in ${next.area.name}` : ''}${beforeMinutes ? `\nStarts at ${clock(next.start)}` : ''}`;
+}
+
+async function checkReminderLimit(env, userId, location, repeating, beforeMinutes) {
+  const count = await env.DB.prepare("SELECT COUNT(*) AS count FROM reminders WHERE user_id = ? AND status IN ('active','sending')").bind(userId).first();
+  if (count.count >= 10) throw new Error('You already have 10 active reminders. Cancel one with /storm reminders first.');
+  const existing = await env.DB.prepare("SELECT id FROM reminders WHERE user_id = ? AND location IS ? AND repeating = ? AND before_minutes = ? AND status IN ('active','sending')")
+    .bind(userId, location, repeating ? 1 : 0, beforeMinutes).first();
+  if (existing) throw new Error('You already have this reminder. View it with /storm reminders.');
+}
+
+// DM buttons reference the stored reminder, keeping ownership and timing options on the server.
+export async function controlReminder(env, userId, action, id) {
+  const reminder = await env.DB.prepare('SELECT * FROM reminders WHERE id=? AND user_id=?').bind(id, userId).first();
+  if (!reminder) return 'This reminder is no longer available.';
+  if (action === 'stop' && reminder.repeating) {
+    const result = await env.DB.prepare("UPDATE reminders SET status='cancelled', lease_until=0 WHERE id=? AND user_id=? AND status IN ('active','sending','failed') RETURNING id")
+      .bind(id, userId).first();
+    return result ? 'Reminder cancelled.' : 'This reminder is no longer active.';
+  }
+  if (action !== 'again' || reminder.repeating || reminder.status !== 'delivered') return 'This reminder is no longer available or is already active.';
+  const { schedule } = await readSchedule(env);
+  const next = nextReminder(schedule, Date.now(), reminder.location, reminder.before_minutes);
+  if (!next) throw new Error('That location is no longer in the storm rotation. Choose a current region.');
+  await checkReminderLimit(env, userId, reminder.location, false, reminder.before_minutes);
+  const result = await env.DB.prepare("UPDATE reminders SET status='active', next_at=?, created_at=?, last_error=NULL, lease_until=0 WHERE id=? AND user_id=? AND status='delivered' RETURNING id")
+    .bind(next.notifyAt, Date.now(), id, userId).first();
+  return result ? reminderConfirmation(next, reminder.location, reminder.before_minutes) : 'This reminder is already active.';
 }
 
 export async function listReminders(env, userId) {
@@ -34,10 +63,10 @@ export async function listReminders(env, userId) {
   const emojis = await applicationEmojis(env);
   const lines = results.map(r => {
     const label = r.location ? schedule.areas.find(x => x.id === r.location)?.name ?? r.location : 'Any storm';
-    return `${emojiText(emojis, r.location)}${label} · ${r.repeating ? 'Yes' : 'No'} · ${r.status === 'failed' ? `stopped: ${r.last_error}` : relative(r.next_at)}`;
+    return `${emojiText(emojis, r.location)}${label} · ${r.repeating ? 'Yes' : 'No'} · ${r.status === 'failed' ? `stopped: ${r.last_error?.replace(/\.$/, '')}` : `${relative(r.next_at)} · ${r.before_minutes ? `${r.before_minutes} min before` : 'At start'}`}`;
   });
   return {
-    content: '**Storm · Repeat · Next start**\n' + lines.join('\n'),
+    content: '**Storm · Repeat · Notify**\n' + lines.join('\n'),
     components: [{ type: 1, components: [{ type: 3, custom_id: 'cancel-reminder', placeholder: 'Cancel a reminder', options: results.map(r => ({ label: `Cancel ${r.location ? schedule.areas.find(x => x.id === r.location)?.name ?? r.location : 'any storm'}${r.repeating ? ' (repeating)' : ''}`.slice(0, 100), value: r.id, ...(emojis[r.location ?? 'soulstorm'] ? { emoji: emojis[r.location ?? 'soulstorm'] } : {}) })) }] }],
   };
 }
@@ -55,7 +84,7 @@ export async function deliverReminders(env, now = Date.now()) {
       .bind(now + 120000, reminder.id, now).first();
     if (!claim) continue;
     // Resolve the original scheduled event, not the time of this possibly delayed cron run.
-    const event = snapshot(schedule, reminder.next_at).current;
+    const event = snapshot(schedule, reminder.next_at + reminder.before_minutes * 60000).current;
     if (!event || (reminder.location && event.area.id !== reminder.location)) {
       await advance(env, reminder, schedule, now, 'The storm schedule changed before delivery.');
       continue;
@@ -69,7 +98,10 @@ export async function deliverReminders(env, now = Date.now()) {
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${reminder.id}:${reminder.next_at}`));
       const nonce = Array.from(new Uint8Array(digest).slice(0, 12), n => n.toString(16).padStart(2, '0')).join('');
       await discord(env, `/channels/${reminder.dm_channel}/messages`, {
-        content: `${emojiText(emojis, reminder.location)}A Soul Storm has started in **${event.area.name}**.\nEnds ${clock(event.end)} · ${relative(event.end)}.`,
+        content: `${emojiText(emojis, reminder.location)}A Soul Storm ${now < event.start ? `starts in **${event.area.name}** ${relative(event.start)}` : `has started in **${event.area.name}**`}\n${now < event.start ? `Starts ${clock(event.start)} · Ends ${clock(event.end)}` : `Ends ${clock(event.end)} · ${relative(event.end)}`}`,
+        components: [{ type: 1, components: [{ type: 2, style: 2,
+          label: reminder.repeating ? 'Stop reminders' : 'Remind me next time',
+          custom_id: `reminder:${reminder.repeating ? 'stop' : 'again'}:${reminder.id}` }] }],
         allowed_mentions: { parse: [] }, nonce, enforce_nonce: true,
       });
       await advance(env, reminder, schedule, now);
@@ -86,7 +118,7 @@ export async function deliverReminders(env, now = Date.now()) {
 
 // Finish a one-off reminder or schedule the next occurrence, always releasing the delivery lease.
 async function advance(env, reminder, schedule, now, reason = null) {
-  const next = reminder.repeating ? nextStorm(schedule, now, reminder.location) : null;
+  const next = reminder.repeating ? nextReminder(schedule, now, reminder.location, reminder.before_minutes) : null;
   await env.DB.prepare('UPDATE reminders SET next_at=?, status=?, lease_until=0, last_error=? WHERE id=? AND status=\'sending\'')
-    .bind(next?.start ?? reminder.next_at, next ? 'active' : reason ? 'failed' : 'delivered', reason, reminder.id).run();
+    .bind(next?.notifyAt ?? reminder.next_at, next ? 'active' : reason ? 'failed' : 'delivered', reason, reminder.id).run();
 }

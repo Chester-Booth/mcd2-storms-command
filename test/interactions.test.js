@@ -80,7 +80,7 @@ test('storm commands and Refresh share a user limit and reject privately before 
       waitUntil: () => assert.fail('Rejected requests must not touch the DB or render images'),
     });
     assert.deepEqual(await response.json(), { type: 4, data: {
-      flags: 64, content: 'Please wait a few seconds before trying again.', allowed_mentions: { parse: [] },
+      flags: 64, content: 'Please wait a few seconds before trying again', allowed_mentions: { parse: [] },
     } });
   }
   assert.deepEqual(keys, ['soulstorms:app:user:user', 'soulstorms:app:user:user']);

@@ -2,7 +2,7 @@ import { editResponse, privateMessage, clock, relative } from './discord.js';
 import { snapshot, readSchedule } from './schedule.js';
 import { timezone, timezoneChoices } from './timezone.js';
 import { renderImage } from './image.js';
-import { createReminder, listReminders } from './reminders.js';
+import { createReminder, listReminders, controlReminder } from './reminders.js';
 import { applicationEmojis, emojiText } from './emojis.js';
 
 // Server interactions nest the user under member; bot DMs provide user directly.
@@ -24,24 +24,24 @@ export async function autocomplete(env, interaction) {
   return [];
 }
 
-export async function stormResponse(env, interaction, zone) {
+export async function stormResponse(env, interaction, zone, location = null) {
   const now = Date.now();
   const stored = await readSchedule(env);
-  const { current, upcoming } = snapshot(stored.schedule, now);
+  const { current, upcoming } = snapshot(stored.schedule, now, location);
   const emojis = await applicationEmojis(env);
-  const status = `${emojiText(emojis)}${current ? 'Storm active.' : 'No active storm.'}\n`;
-  const timing = current ? `${emojiText(emojis, current.area.id)}${current.area.name} ends ${clock(current.end)} · ${relative(current.end)}.\n` : '';
+  const status = `${emojiText(emojis)}${current ? 'Storm active' : `No active storm${location ? ` in ${upcoming[0].area.name}` : ''}`}\n`;
+  const timing = current ? `${emojiText(emojis, current.area.id)}${current.area.name} ends ${clock(current.end)} · ${relative(current.end)}\n` : '';
   const next = upcoming[0];
-  const stale = now - stored.checked_at > 60 * 60000 ? '\nSchedule sync is delayed. Using the last known rotation.' : '';
-  const image = await renderImage(stored.schedule, now, zone);
-  const description = imageDescription(stored.schedule, now, zone);
+  const stale = now - stored.checked_at > 60 * 60000 ? '\nSchedule sync is delayed. Using the last known rotation' : '';
+  const image = await renderImage(stored.schedule, now, zone, location);
+  const description = imageDescription(stored.schedule, now, zone, location);
   await editResponse(interaction, {
     // Components v2 lets the image appear above the live Discord timestamps.
     flags: 32768,
     components: [
       { type: 12, items: [{ media: { url: 'attachment://storms.png' }, description }] },
-      { type: 10, content: `${status}${timing}${emojiText(emojis, next.area.id)}${next.area.name} starts at ${clock(next.start)} · ${relative(next.start)}.${stale}` },
-      { type: 1, components: [{ type: 2, style: 2, label: 'Refresh', custom_id: `refresh:${zone}` }] },
+      { type: 10, content: `${status}${timing}${emojiText(emojis, next.area.id)}${next.area.name} starts at ${clock(next.start)} · ${relative(next.start)}${stale}` },
+      { type: 1, components: [{ type: 2, style: 2, label: 'Refresh', custom_id: `refresh:${zone}${location ? `:${location}` : ''}` }] },
     ],
     allowed_mentions: { parse: [] },
   }, image, description);
@@ -53,7 +53,14 @@ export async function processInteraction(env, interaction) {
   if (interaction.type === 3) {
     const customId = interaction.data.custom_id;
     // The button stores the message's timezone so another user's Refresh keeps its formatting.
-    if (customId.startsWith('refresh:')) return stormResponse(env, interaction, timezone(customId.slice(8)));
+    if (customId.startsWith('refresh:')) {
+      const [, zone, location] = customId.split(':');
+      return stormResponse(env, interaction, timezone(zone), location || null);
+    }
+    if (customId.startsWith('reminder:')) {
+      const [, action, reminderId] = customId.split(':');
+      return editResponse(interaction, privateMessage(await controlReminder(env, id, action, reminderId)));
+    }
     if (customId === 'cancel-reminder') {
       const reminderId = interaction.data.values?.[0];
       // Check ownership in SQL even though the cancellation menu is private.
@@ -65,7 +72,7 @@ export async function processInteraction(env, interaction) {
   }
   if (interaction.data.name === 'storms') {
     const saved = await env.DB.prepare('SELECT timezone FROM preferences WHERE user_id=?').bind(id).first();
-    return stormResponse(env, interaction, timezone(option(interaction, 'timezone') ?? saved?.timezone));
+    return stormResponse(env, interaction, timezone(option(interaction, 'timezone') ?? saved?.timezone), option(interaction, 'location') ?? null);
   }
   if (interaction.data.name !== 'storm') throw new Error('Unknown command.');
   switch (interaction.data.options?.[0]?.name) {
@@ -78,7 +85,7 @@ export async function processInteraction(env, interaction) {
       if (!env.DISCORD_BOT_TOKEN) throw new Error('The bot token has not been configured yet.');
       const location = option(interaction, 'location') ?? null;
       const repeating = option(interaction, 'repeat') === true;
-      return editResponse(interaction, privateMessage(await createReminder(env, interaction, id, location, repeating)));
+      return editResponse(interaction, privateMessage(await createReminder(env, interaction, id, location, repeating, option(interaction, 'before') ?? 0)));
     }
     case 'reminders': {
       const message = await listReminders(env, id);
@@ -100,7 +107,7 @@ export async function runInteraction(env, interaction) {
       // Public commands contain no personal data; reminder and settings errors remain ephemeral.
       const content = error.message.startsWith('Discord response') ? 'Discord could not update the response. Please try again.' : error.message;
       await editResponse(interaction, interaction.type === 3 && isPublic(interaction)
-        ? { components: [{ type: 10, content }], attachments: [], allowed_mentions: { parse: [] } }
+        ? { components: [{ type: 10, content: content.replace(/\.$/, '') }], attachments: [], allowed_mentions: { parse: [] } }
         : privateMessage(content));
     } catch (updateError) {
       console.error(JSON.stringify({ event: 'error_response_failed', error: updateError.message }));
@@ -108,10 +115,11 @@ export async function runInteraction(env, interaction) {
   }
 }
 
-export function imageDescription(schedule, now, zone) {
-  const { current, upcoming } = snapshot(schedule, now);
+export function imageDescription(schedule, now, zone, location = null) {
+  const { current, upcoming } = snapshot(schedule, now, location);
   const format = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
   const date = new Intl.DateTimeFormat('en-GB', { timeZone: zone, day: 'numeric', month: 'short', year: 'numeric' }).format(now);
   const active = current ? `Active: ${current.area.name}, ends ${format.format(current.end)}.` : 'No active storm.';
-  return `Soul Storms, ${date} at ${format.format(now)}, ${zone}. ${active} Next seven storms: ${upcoming.map(storm => `${storm.area.name}, ${format.format(storm.start)} to ${format.format(storm.end)}`).join('; ')}.`.slice(0, 1024);
+  const eventDate = new Intl.DateTimeFormat('en-GB', { timeZone: zone, day: 'numeric', month: 'short' });
+  return `Soul Storms${location ? ` in ${upcoming[0].area.name}` : ''}, ${date} at ${format.format(now)}, ${zone}. ${active} Next seven storms: ${upcoming.map(storm => `${storm.area.name}, ${location ? `${eventDate.format(storm.start)} ` : ''}${format.format(storm.start)} to ${format.format(storm.end)}`).join('; ')}.`.slice(0, 1024);
 }
