@@ -22,8 +22,7 @@ A Discord bot to view Minecraft Dungeons II's [Soul Storms](https://minecraft.wi
 /storm reminders
 ```
 
-Settings are per-user. Reminders default to DMs. Use `where:Channel` for a ping in the current channel, or add `channel` to choose a server text channel. Choosing `channel` alone also selects channel delivery. The bot must be installed in that server, and both you and the bot need permission to view and send messages there. Confirmations stay private; channel reminders mention only their creator.
-
+Settings are per-user and reminders arrive by DM or as a ping in a channel (defaults to dm or current channel).
 ## Deployment
 
 Uses Node.js 22+, Wrangler, Cloudflare and a Discord application
