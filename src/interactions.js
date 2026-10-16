@@ -59,7 +59,7 @@ export async function processInteraction(env, interaction) {
     }
     if (customId.startsWith('reminder:')) {
       const [, action, reminderId] = customId.split(':');
-      return editResponse(interaction, privateMessage(await controlReminder(env, id, action, reminderId)));
+      return editResponse(interaction, privateMessage(await controlReminder(env, id, action, reminderId, interaction)));
     }
     if (customId === 'cancel-reminder') {
       const reminderId = interaction.data.values?.[0];
@@ -85,7 +85,8 @@ export async function processInteraction(env, interaction) {
       if (!env.DISCORD_BOT_TOKEN) throw new Error('The bot token has not been configured yet.');
       const location = option(interaction, 'location') ?? null;
       const repeating = option(interaction, 'repeat') === true;
-      return editResponse(interaction, privateMessage(await createReminder(env, interaction, id, location, repeating, option(interaction, 'before') ?? 0)));
+      const delivery = { where: option(interaction, 'where'), channel: option(interaction, 'channel') };
+      return editResponse(interaction, privateMessage(await createReminder(env, interaction, id, location, repeating, option(interaction, 'before') ?? 0, delivery)));
     }
     case 'reminders': {
       const message = await listReminders(env, id);
